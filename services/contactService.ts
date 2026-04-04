@@ -10,16 +10,16 @@ export interface RegisteredContact {
 export const contactService = {
   /**
    * Syncs device contacts with the Supabase database to find which are registered.
-   * Takes an array of phone numbers and returns registered profile data.
+   * Also fetches profiles that are already linked via referral (inner circle).
+   * Takes user_id and an array of phone numbers.
    */
-  async getRegisteredContacts(phoneNumbers: string[]) {
-    if (phoneNumbers.length === 0) return [];
-
-    console.log(`[contactService] Syncing ${phoneNumbers.length} contacts with database...`);
+  async getRegisteredContacts(userId: string, phoneNumbers: string[]) {
+    console.log(`[contactService] Syncing contacts for user ${userId}...`);
     
-    // Call the Supabase RPC function to filter registered contacts
+    // Call the updated Supabase RPC function (v2)
     try {
       const { data, error } = await supabase.rpc('get_registered_contacts', {
+        current_user_id: userId,
         phone_numbers: phoneNumbers,
       });
 
@@ -28,11 +28,12 @@ export const contactService = {
         throw error;
       }
 
-      console.log(`[contactService] Found ${data?.length || 0} registered contacts.`);
+      console.log(`[contactService] Found ${data?.length || 0} total contacts.`);
       return data as RegisteredContact[];
     } catch (error) {
       console.error('[contactService] getRegisteredContacts failed:', error);
       throw error;
     }
   }
+
 };

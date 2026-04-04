@@ -144,7 +144,7 @@ END;
 $$;
 
 -- function: get_registered_contacts
-CREATE OR REPLACE FUNCTION get_registered_contacts(phone_numbers TEXT[])
+CREATE OR REPLACE FUNCTION get_registered_contacts(current_user_id TEXT, phone_numbers TEXT[])
 RETURNS TABLE (
   id TEXT,
   full_name TEXT,
@@ -158,9 +158,18 @@ BEGIN
   RETURN QUERY
   SELECT p.id, p.full_name, p.phone_number, p.avatar_url
   FROM public.profiles p
-  WHERE p.phone_number = ANY(phone_numbers);
+  WHERE 
+    -- 1. Contact is in their phone's address book
+    p.phone_number = ANY(phone_numbers)
+    OR
+    -- 2. Contact is already in their "Inner Circle" (mutual contacts)
+    EXISTS (
+        SELECT 1 FROM public.contacts c 
+        WHERE c.user_id = current_user_id AND c.contact_id = p.id
+    );
 END;
 $$;
+
 
 -- 7. Realtime Setup
 DO $$ 

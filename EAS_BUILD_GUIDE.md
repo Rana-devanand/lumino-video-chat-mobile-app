@@ -73,3 +73,7 @@ This will guide you through uploading the AAB file to the Google Play Console.
 - **"Command not found"**: Always use `npx eas-cli` instead of `eas`.
 - **Build Fails**: Check the build logs at the URL provided in your terminal. Common issues include missing environment variables or outdated `expo` versions.
 - **OTP not received**: Make sure your **SHA-1 and SHA-256** fingerprints from EAS are added to your Firebase project settings.
+
+
+## port running
+npx http-server ./web-redirect -p 3000

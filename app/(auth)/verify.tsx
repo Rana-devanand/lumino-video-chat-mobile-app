@@ -43,6 +43,9 @@ export default function VerifyScreen() {
       if (user) {
         setSyncing(true);
         try {
+          // Add a small delay to ensure the referrerId has been saved by RootLayout
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
           const rid = await AsyncStorage.getItem('referrerId');
           await authService.syncUserWithSupabase(user, rid);
           if (rid) await AsyncStorage.removeItem('referrerId');
@@ -58,6 +61,7 @@ export default function VerifyScreen() {
     });
     return subscriber; 
   }, []);
+
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   useEffect(() => {

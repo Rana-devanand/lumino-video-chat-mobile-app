@@ -83,6 +83,23 @@ export const authService = {
   },
 
   /**
+   * Fetches user profile from Supabase by ID.
+   */
+  async getProfile(userId: string) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) {
+      console.error('[authService] getProfile failed:', error);
+      return null;
+    }
+    return data;
+  },
+
+  /**
    * Signs out the current user.
    */
   async signOut() {

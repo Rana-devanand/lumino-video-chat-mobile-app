@@ -73,18 +73,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
 
-  // ── Handle Deep Linking (Invitations) ──────────────────────────────────────
-  const url = Linking.useURL();
-  useEffect(() => {
-    if (url) {
-      const { queryParams } = Linking.parse(url);
-      if (queryParams?.referrer) {
-        const rid = String(queryParams.referrer);
-        AsyncStorage.setItem('referrerId', rid);
-        console.log(`[Deep Link] Referrer detected and saved: ${rid}`);
-      }
-    }
-  }, [url]);
+
   const inputRef = useRef<TextInput>(null);
 
   const filteredCountries = COUNTRIES.filter(

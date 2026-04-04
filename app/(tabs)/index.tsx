@@ -1,286 +1,445 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TextInput, 
+  Pressable, 
+  ActivityIndicator,
+  Alert,
+  Modal,
+  TouchableOpacity,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { authService } from '@/services/authService';
+import { contactService, RegisteredContact } from '@/services/contactService';
+import { groupService, Group } from '@/services/groupService';
+import { videoCallService } from '@/services/videoCallService';
+import { ContactPicker } from '@/components/ContactPicker';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [contacts, setContacts] = useState<RegisteredContact[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const recentCalls = [
-    {
-      id: '1',
-      name: 'David Miller',
-      time: 'Yesterday, 8:45 PM',
-      type: 'incoming',
-      avatar: 'https://i.pravatar.cc/150?u=david',
-    },
-    {
-      id: '2',
-      name: 'Elena Rodriguez',
-      time: 'Tuesday, 2:12 PM',
-      type: 'missed',
-      avatar: 'https://i.pravatar.cc/150?u=elena',
-    },
-    {
-      id: '3',
-      name: 'Marcus Chen',
-      time: 'Oct 12, 11:30 AM',
-      type: 'incoming',
-      avatar: 'https://i.pravatar.cc/150?u=marcus',
-    },
-  ];
+  // Modal states
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'call' | 'group'>('call');
+  const [groupNameModalVisible, setGroupNameModalVisible] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const currentUser = authService.getCurrentUser();
+      setUser(currentUser);
+      
+      if (currentUser) {
+        // Parallel load contacts and groups
+        const [registeredContacts, userGroups] = await Promise.all([
+          contactService.getRegisteredContacts(currentUser.uid, []),
+          groupService.getUserGroups(currentUser.uid)
+        ]);
+        
+        setContacts(registeredContacts);
+        setGroups(userGroups);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateRoom = async (selectedIds: string[]) => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      // Start a group call room
+      const roomIds = await videoCallService.createGroupCall(user.uid, selectedIds);
+      
+      // Navigate to the first room created (or a special group room if we had one)
+      // For now, we move to the room view
+      router.push({
+        pathname: '/room',
+        params: { contactId: selectedIds[0], mode: 'caller' } 
+      });
+      
+      Alert.alert('Group Call', 'Initiating call with participants...');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to start group call');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenPicker = (mode: 'call' | 'group') => {
+    setPickerMode(mode);
+    setPickerVisible(true);
+  };
+
+  const onPickerConfirm = (selectedIds: string[]) => {
+    if (pickerMode === 'call') {
+      handleCreateRoom(selectedIds);
+    } else {
+      setSelectedForGroup(selectedIds);
+      setGroupNameModalVisible(true);
+    }
+  };
+
+  const handleFinalizeGroup = async () => {
+    if (!newGroupName.trim() || !user) return;
+    try {
+      setLoading(true);
+      await groupService.createGroup(newGroupName, selectedForGroup, user.uid);
+      setGroupNameModalVisible(false);
+      setNewGroupName('');
+      loadData();
+      Alert.alert('Success', `Group "${newGroupName}" created!`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create group');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Image source={{ uri: 'https://i.pravatar.cc/150?u=sarah' }} style={styles.avatar} />
-          <Text style={styles.brandName}>Lumina</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <Pressable onPress={() => router.push('/settings')}>
-            <Ionicons name="settings-outline" size={24} color="#4F46E5" />
-          </Pressable>
-          <Pressable>
-            <Ionicons name="notifications" size={24} color="#4F46E5" />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-        <TextInput 
-          placeholder="Search contacts or history..." 
-          style={styles.searchInput}
-          placeholderTextColor="#8E8E93"
-        />
-      </View>
-
-      {/* Action Cards */}
-    <View>
-        <Pressable style={styles.primaryCard} onPress={() => router.push('/room')}>
-        <View style={styles.iconContainerPrimary}>
-          <Ionicons name="videocam" size={28} color="#FFFFFF" />
-        </View>
-        <Text style={styles.cardTitlePrimary}>Start New Call</Text>
-        <Text style={styles.cardSubtitlePrimary}>Reach out to your inner circle instantly</Text>
-      </Pressable>
-
-      <Pressable style={styles.secondaryCard} onPress={() => router.push('/room')}>
-        <View style={styles.iconContainerSecondary}>
-          <Ionicons name="person-add" size={28} color="#4F46E5" />
-        </View>
-        <Text style={styles.cardTitleSecondary}>Join Room</Text>
-        <Text style={styles.cardSubtitleSecondary}>Enter a code to jump into a live chat</Text>
-      </Pressable>
-    </View>
-
-      {/* Recent Calls */}
-      <View style={styles.recentSectionHeader}>
-        <Text style={styles.recentTitle}>Recent Calls</Text>
-        <Pressable onPress={() => router.push('/(tabs)/history')}>
-          <Text style={styles.viewAllText}>View All</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.recentList}>
-        {recentCalls.map((call) => (
-          <View key={call.id} style={styles.recentCallItem}>
-            <Image source={{ uri: call.avatar }} style={styles.callAvatar} />
-            <View style={styles.callDetails}>
-              <Text style={styles.callName}>{call.name}</Text>
-              <View style={styles.callMeta}>
-                {call.type === 'incoming' && <Ionicons name="arrow-down" size={14} color="#4F46E5" />}
-                {call.type === 'missed' && <Ionicons name="arrow-down" size={14} color="#E02424" />}
-                <Text style={styles.callTime}>{call.time}</Text>
-              </View>
+    <View style={styles.root}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarText}>{user?.displayName?.[0] || 'L'}</Text>
             </View>
-            <View style={styles.callAction}>
-               <Ionicons name="videocam" size={24} color="#4B5563" />
+            <Text style={styles.brandName}>Lumina</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <Pressable onPress={() => router.push('/settings')}>
+              <Ionicons name="settings-outline" size={24} color="#4440EB" />
+            </Pressable>
+            <Pressable>
+              <Ionicons name="notifications-outline" size={24} color="#4440EB" />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#9BA3AF" style={styles.searchIcon} />
+          <TextInput 
+            placeholder="Search groups or friends..." 
+            style={styles.searchInput}
+            placeholderTextColor="#9BA3AF"
+          />
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionRow}>
+          <Pressable style={styles.actionButton} onPress={() => handleOpenPicker('call')}>
+            <View style={[styles.actionIcon, { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name="videocam" size={24} color="#4440EB" />
+            </View>
+            <Text style={styles.actionText}>Group Call</Text>
+          </Pressable>
+
+          <Pressable style={styles.actionButton} onPress={() => handleOpenPicker('group')}>
+            <View style={[styles.actionIcon, { backgroundColor: '#F0FDF4' }]}>
+              <Ionicons name="people" size={24} color="#10B981" />
+            </View>
+            <Text style={styles.actionText}>New Group</Text>
+          </Pressable>
+
+          <Pressable style={styles.actionButton} onPress={() => router.push('/(tabs)/contacts')}>
+            <View style={[styles.actionIcon, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="person-add" size={24} color="#F97316" />
+            </View>
+            <Text style={styles.actionText}>Add Contact</Text>
+          </Pressable>
+        </View>
+
+        {/* Groups Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Groups</Text>
+          <Pressable onPress={() => {}}>
+            <Text style={styles.viewAllText}>Show All</Text>
+          </Pressable>
+        </View>
+
+        {groups.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.groupScroll}>
+            {groups.map(group => (
+              <Pressable key={group.id} style={styles.groupCard}>
+                <View style={styles.groupAvatar}>
+                  <Ionicons name="people" size={28} color="#4440EB" />
+                </View>
+                <Text style={styles.groupName} numberOfLines={1}>{group.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No groups yet. Create one to stay connected!</Text>
+          </View>
+        )}
+
+        {/* Inner Circle Section */}
+        <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+          <Text style={styles.sectionTitle}>Inner Circle</Text>
+          <Pressable onPress={() => router.push('/(tabs)/contacts')}>
+            <Text style={styles.viewAllText}>View All</Text>
+          </Pressable>
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color="#4440EB" style={{ marginTop: 20 }} />
+        ) : contacts.length > 0 ? (
+          <View style={styles.contactList}>
+            {contacts.slice(0, 8).map((contact) => (
+              <Pressable 
+                key={contact.id} 
+                style={styles.contactItem}
+                onPress={() => router.push({
+                  pathname: '/chat/[contactId]',
+                  params: { contactId: contact.id, name: contact.full_name, avatar: contact.avatar_url || '' }
+                })}
+              >
+                <View style={styles.contactAvatar}>
+                  <Text style={styles.contactAvatarText}>{contact.full_name?.[0] || '?'}</Text>
+                  <View style={styles.onlineStatus} />
+                </View>
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactName}>{contact.full_name}</Text>
+                  <Text style={styles.contactStatus}>Recently active</Text>
+                </View>
+                <Pressable 
+                  style={styles.callButton}
+                  onPress={() => router.push({
+                    pathname: '/room',
+                    params: { contactId: contact.id, mode: 'caller', name: contact.full_name }
+                  })}
+                >
+                  <Ionicons name="videocam" size={22} color="#4440EB" />
+                </Pressable>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>Keep your tight circle here. Invite a friend!</Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Global Modals */}
+      <ContactPicker
+        visible={pickerVisible}
+        contacts={contacts}
+        onClose={() => setPickerVisible(false)}
+        onConfirm={onPickerConfirm}
+        title={pickerMode === 'call' ? 'Start Group Call' : 'New Persistent Group'}
+        buttonLabel={pickerMode === 'call' ? 'Call' : 'Next'}
+      />
+
+      <Modal visible={groupNameModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Enter Group Name</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Family Chat, Office Room"
+              value={newGroupName}
+              onChangeText={setNewGroupName}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setGroupNameModalVisible(false)} style={styles.cancelBtn}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleFinalizeGroup} style={styles.confirmBtn}>
+                <Text style={styles.confirmText}>Create</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        ))}
-      </View>
-    </ScrollView>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  contentContainer: {
-    padding: 24,
-    paddingTop: 60, // Adjust for safe area
-  },
+  root: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1 },
+  contentContainer: { padding: 24, paddingTop: 60, paddingBottom: 100 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
   },
-  headerLeft: {
-    flexDirection: 'row',
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 10,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  brandName: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: '#4F46E5',
-    letterSpacing: -0.5,
-  },
-  greeting: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 20,
-  },
+  headerAvatarText: { color: '#4440EB', fontWeight: '700', fontSize: 14 },
+  brandName: { fontSize: 24, fontWeight: '800', color: '#4440EB', letterSpacing: -0.5 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FFF',
     borderRadius: 16,
     paddingHorizontal: 16,
     height: 50,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, fontSize: 16, color: '#111827' },
+
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 32,
   },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
+  actionButton: {
+    alignItems: 'center',
     flex: 1,
-    fontSize: 16,
-    color: '#111827',
   },
-  primaryCard: {
-    backgroundColor: '#4F46E5',
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 16,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  iconContainerPrimary: {
-    width: 56,
-    height: 56,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 16,
+  actionIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  cardTitlePrimary: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
     marginBottom: 8,
-  },
-  cardSubtitlePrimary: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  secondaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 36,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  iconContainerSecondary: {
-    width: 56,
-    height: 56,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  cardTitleSecondary: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  cardSubtitleSecondary: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  recentSectionHeader: {
+  actionText: { fontSize: 13, fontWeight: '700', color: '#4B5563' },
+
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  recentTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  viewAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  recentList: {
-    gap: 16,
-  },
-  recentCallItem: {
-    flexDirection: 'row',
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  viewAllText: { fontSize: 13, fontWeight: '700', color: '#4440EB' },
+
+  groupScroll: { marginHorizontal: -24, paddingHorizontal: 24 },
+  groupCard: {
+    width: 100,
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
+    marginRight: 16,
+    padding: 12,
+    backgroundColor: '#FFF',
     borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 5,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
   },
-  callAvatar: {
+  groupAvatar: {
     width: 50,
     height: 50,
-    borderRadius: 12,
-    marginRight: 16,
+    borderRadius: 16,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  callDetails: {
-    flex: 1,
-  },
-  callName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  callMeta: {
+  groupName: { fontSize: 12, fontWeight: '700', color: '#374151', textAlign: 'center' },
+
+  contactList: { gap: 12 },
+  contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: '#FFF',
+    padding: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
-  callTime: {
-    fontSize: 13,
-    color: '#6B7280',
+  contactAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  callAction: {
+  contactAvatarText: { fontSize: 16, fontWeight: '700', color: '#4440EB' },
+  onlineStatus: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  contactInfo: { flex: 1 },
+  contactName: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  contactStatus: { fontSize: 12, color: '#9CA3AF' },
+  callButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F3FF',
     justifyContent: 'center',
-    alignItems: 'flex-end',
-  }
+    alignItems: 'center',
+  },
+
+  emptyCard: {
+    padding: 24,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  emptyText: { color: '#9CA3AF', fontSize: 14, textAlign: 'center' },
+
+  // Overlay / Modal
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  modal: { backgroundColor: '#FFF', borderRadius: 24, padding: 24 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 16 },
+  modalInput: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    fontSize: 16,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  cancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  cancelText: { color: '#6B7280', fontWeight: '700' },
+  confirmBtn: { backgroundColor: '#4440EB', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
+  confirmText: { color: '#FFF', fontWeight: '700' },
 });

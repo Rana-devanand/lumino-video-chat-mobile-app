@@ -94,7 +94,7 @@ export function useWebRTC() {
     return peerConnection;
   };
 
-  const startCall = async () => {
+  const startCall = async (guestId?: string) => {
     setCallStatus('connecting');
     const stream = localStream || await setupMediaStream();
     if (!stream) {
@@ -109,11 +109,12 @@ export function useWebRTC() {
       return null;
     }
 
-    // 1. Create a new room in Supabase
-    const newRoomId = await videoCallService.createRoom(currentUser.uid);
+    // 1. Create a new room in Supabase with optional guest
+    const newRoomId = await videoCallService.createRoom(currentUser.uid, guestId);
     setRoomId(newRoomId);
 
     const peerConnection = createPeerConnection(newRoomId, 'caller');
+
 
     // 2. Create Offer
     const offer = await peerConnection.createOffer({});
@@ -126,9 +127,16 @@ export function useWebRTC() {
     const channel = videoCallService.subscribeToCallEvents(
       newRoomId,
       async (payload) => {
+        // Handle Answer
         if (payload.new.answer && !(pc.current as any)?.remoteDescription) {
           const answer = new RTCSessionDescription(payload.new.answer);
           await pc.current?.setRemoteDescription(answer);
+        }
+        // Handle Remote End/Decline
+        if (payload.new.status === 'ended') {
+          console.log('[useWebRTC] Call ended by remote peer');
+          cleanup();
+          setCallStatus('ended');
         }
       },
       async (payload) => {
