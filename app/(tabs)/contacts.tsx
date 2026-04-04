@@ -109,8 +109,12 @@ export default function ContactsScreen() {
     const user = authService.getCurrentUser();
     const referralId = user?.uid || 'guest';
 
+    let WEB_REDIRECT_LINK = process.env.EXPO_PUBLIC_WEB_REDIRECT_LINK || "http://[IP_ADDRESS]";
+    
+
+
     // Using the port where http-server is running (3000)
-    const bridgeBaseUrl = 'http://10.179.164.83:3000'; 
+    const bridgeBaseUrl = WEB_REDIRECT_LINK; 
     const url = `${bridgeBaseUrl}/?referrer=${referralId}`;
 
     console.log(`[ContactsScreen] Generated Invite URL: ${url}`);
