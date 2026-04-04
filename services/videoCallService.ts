@@ -17,15 +17,28 @@ export const videoCallService = {
   async createRoom(hostId: string) {
     console.log(`[videoCallService] Creating room for host: ${hostId}`);
 
+    // Check if the supabase client is properly initialized
+    // (In production, if env vars are missing, the URL might be invalid)
+    if (!process.env.EXPO_PUBLIC_SUPABASE_URL) {
+      console.error('[videoCallService] EXPO_PUBLIC_SUPABASE_URL is missing! Production build will fail.');
+      throw new Error('Database configuration missing. Please report this to support.');
+    }
+
     const { data, error } = await supabase
       .from('webrtc_rooms')
       .insert({ host_id: hostId })
       .select('id')
       .single();
 
-    if (error || !data) {
-      console.error('[videoCallService] Room creation failed:', error);
-      throw error;
+    if (error) {
+      // Detailed error logging for production debugging
+      console.error('[videoCallService] Room creation failed:', error.message, error.details, error.hint);
+      throw new Error(`Failed to create a new room: ${error.message}`);
+    }
+
+    if (!data) {
+      console.error('[videoCallService] Room data is null after insert.');
+      throw new Error('Failed to retrieve new room session.');
     }
 
     console.log(`[videoCallService] Room created successfully: ${data.id}`);
