@@ -193,6 +193,18 @@ export const authService = {
   },
 
   /**
+   * Updates the user's Expo push token in the profiles table.
+   */
+  async updatePushToken(userId: string, token: string) {
+    console.log(`[authService] Updating push token for user ${userId}...`);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ expo_push_token: token })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+
+  /**
    * Uploads a profile picture to Supabase Storage and updates the profiles table.
    */
   async uploadAvatar(userId: string, uri: string) {

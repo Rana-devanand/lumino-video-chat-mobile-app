@@ -19,6 +19,7 @@ import { videoCallService, VideoRoom } from '@/services/videoCallService';
 import { authService } from '@/services/authService';
 import { soundService } from '@/services/soundService';
 import { presenceService } from '@/services/presenceService';
+import { notificationService } from '@/services/notificationService';
 
 
 ExpoSplashScreen.preventAutoHideAsync();
@@ -134,7 +135,39 @@ export default function RootLayout() {
     };
   }, [isAuthenticated]);
 
-  // 4. Navigation logic
+  // 4. Push Notification Registration
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const registerPush = async () => {
+      const user = await authService.getCurrentUser();
+      if (!user) return;
+
+      const token = await notificationService.registerForPushNotificationsAsync();
+      if (token) {
+        await authService.updatePushToken(user.id, token);
+      }
+    };
+
+    registerPush();
+
+    // Foreground notification listeners
+    const notificationListener = notificationService.addNotificationReceivedListener(notification => {
+      console.log('[RootLayout] Notification Received in Foreground:', notification);
+    });
+
+    const responseListener = notificationService.addNotificationResponseReceivedListener(response => {
+      console.log('[RootLayout] Notification Response:', response);
+      // Optional: Navigate to chat if needed
+    });
+
+    return () => {
+      notificationListener.remove();
+      responseListener.remove();
+    };
+  }, [isAuthenticated]);
+
+  // 5. Navigation logic
   useEffect(() => {
     if (isAuthenticated === null) return;
     if (isAuthenticated) {

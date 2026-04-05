@@ -24,7 +24,7 @@ export const soundService = {
       if (this.callingSound) await this.callingSound.unloadAsync();
       
       const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://raw.githubusercontent.com/Ansh-Rathore/Ringtones/master/Nokia%20Lumia.mp3?raw=true' },
+        require('../assets/ringtone/memory.mp3'),
         { shouldPlay: true, isLooping: true }
       );
       this.callingSound = sound;
