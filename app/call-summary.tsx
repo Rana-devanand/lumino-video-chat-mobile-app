@@ -8,23 +8,23 @@ export default function CallSummaryScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      
+
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.brandName}>Lumina</Text>
+        <Text style={styles.brandName}>lumino</Text>
         <Image source={{ uri: 'https://i.pravatar.cc/150?u=sarah' }} style={styles.userAvatar} />
       </View>
 
       {/* Main Content inside Card */}
       <View style={styles.summaryCard}>
-        
+
         {/* Large icon */}
         <View style={styles.iconCircle}>
           <Ionicons name="videocam-off" size={48} color="#FFFFFF" />
         </View>
 
         <Text style={styles.title}>Call Ended</Text>
-        
+
         <View style={styles.durationBadge}>
           <Ionicons name="time" size={16} color="#4B5563" />
           <Text style={styles.durationText}>Call duration: 15:20</Text>

@@ -1,24 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  Pressable, 
-  KeyboardAvoidingView, 
-  Platform, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   Dimensions,
   ActivityIndicator,
   Share,
   Alert,
-  Animated
+  Animated,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { RTCView } from 'react-native-webrtc';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { soundService } from '../services/soundService';
+import { authService } from '../services/authService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -45,11 +47,11 @@ const PulseRing = () => {
   }, []);
 
   return (
-    <Animated.View 
+    <Animated.View
       style={[
-        styles.pulseRing, 
+        styles.pulseRing,
         { transform: [{ scale }], opacity }
-      ]} 
+      ]}
     />
   );
 };
@@ -57,12 +59,13 @@ const PulseRing = () => {
 export default function RoomScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  
+
   const directRoomId = params.roomId as string;
   const directMode = params.mode as 'caller' | 'callee';
-  const contactName = (params.name as string) || 'Lumina User';
+  const contactName = (params.name as string) || 'lumino User';
   const contactId = params.contactId as string;
 
+  const [contactAvatar, setContactAvatar] = useState<string | null>(null);
   const [inputRoomId, setInputRoomId] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -81,14 +84,19 @@ export default function RoomScreen() {
   useEffect(() => {
     const initialize = async () => {
       await setupMediaStream();
-      
+
       if (directMode === 'caller' && contactId) {
+        // Fetch contact profile for avatar
+        authService.getProfile(contactId).then(p => {
+          if (p?.avatar_url) setContactAvatar(p.avatar_url);
+        });
+
         soundService.playCallingSound();
-        
+
         // Handle visual-only calls for dummy contacts
         if (contactId.startsWith('d')) {
           console.log('[RoomScreen] Visual-only call for dummy contact.');
-          return; 
+          return;
         }
 
         const newId = await startCall(contactId);
@@ -129,7 +137,7 @@ export default function RoomScreen() {
   const handleShareRoom = async () => {
     if (!roomId) return;
     try {
-      await Share.share({ message: `Join my Lumina Video Call! Room ID: ${roomId}` });
+      await Share.share({ message: `Join my lumino Video Call! Room ID: ${roomId}` });
     } catch (error) { console.error(error); }
   };
 
@@ -156,18 +164,25 @@ export default function RoomScreen() {
         )}
         <View style={styles.overlay} />
         <View style={styles.callingContent}>
-           <View style={styles.avatarContainer}>
-             <PulseRing />
-             <View style={styles.avatarMain}>
+          <View style={styles.avatarContainer}>
+            <PulseRing />
+            <View style={styles.avatarMain}>
+              {contactAvatar ? (
+                <Image 
+                  source={{ uri: contactAvatar }} 
+                  style={{ width: '100%', height: '100%', borderRadius: 60 }} 
+                />
+              ) : (
                 <Text style={styles.avatarText}>{contactName[0]}</Text>
-             </View>
-           </View>
-           <Text style={styles.callingName}>{contactName}</Text>
-           <Text style={styles.callingStatus}>Calling...</Text>
+              )}
+            </View>
+          </View>
+          <Text style={styles.callingName}>{contactName}</Text>
+          <Text style={styles.callingStatus}>Calling...</Text>
         </View>
         <View style={styles.controlBarCalling}>
           <Pressable style={styles.endCallBtnFull} onPress={handleEndCall}>
-             <Ionicons name="call" size={32} color="#FFF" />
+            <Ionicons name="call" size={32} color="#FFF" />
           </Pressable>
         </View>
       </View>
@@ -237,7 +252,7 @@ export default function RoomScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="#111827" /></Pressable>
-          <Text style={styles.brandName}>Lumina</Text>
+          <Text style={styles.brandName}>lumino</Text>
           <View style={styles.placeholderRight} />
         </View>
         <View style={styles.heroContainer}>
@@ -289,7 +304,7 @@ const styles = StyleSheet.create({
   primaryButtonDisabled: { backgroundColor: '#A5B4FC' },
   btnIcon: { marginRight: 8 },
   primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  
+
   callingContainer: { flex: 1, backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center' },
   blurredBg: { position: 'absolute', width: width, height: height, opacity: 0.4 },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
@@ -300,7 +315,7 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 50, color: '#FFF', fontWeight: '800' },
   callingName: { fontSize: 28, fontWeight: '800', color: '#FFF', marginBottom: 10 },
   callingStatus: { fontSize: 16, color: 'rgba(255,255,255,0.7)', letterSpacing: 2 },
-  
+
   callContainer: { flex: 1, backgroundColor: '#000' },
   remoteVideo: { flex: 1, width: width, height: height },
   remotePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1F2937' },
@@ -319,7 +334,7 @@ const styles = StyleSheet.create({
   endCallBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#EF4444', justifyContent: 'center', alignItems: 'center', transform: [{ rotate: '135deg' }] },
   controlBarCalling: { position: 'absolute', bottom: 80, width: '100%', alignItems: 'center' },
   endCallBtnFull: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#EF4444', justifyContent: 'center', alignItems: 'center', transform: [{ rotate: '135deg' }] },
-  
+
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' },
   loadingText: { marginTop: 16, fontSize: 16, color: '#4B5563', fontWeight: '500' },
   cancelButton: { marginTop: 40, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 24, backgroundColor: '#E5E7EB' },

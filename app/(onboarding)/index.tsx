@@ -11,7 +11,7 @@ const ONBOARDING_DATA = [
   {
     id: '1',
     image: require('@/assets/onboard-image/video-call.jpg'),
-    badge: 'Lumina High-Def',
+    badge: 'lumino High-Def',
     title: 'Crystal Clear Video',
     description: "Experience high-definition video calls with minimal latency. We've optimized every frame for the most natural conversation.",
   },

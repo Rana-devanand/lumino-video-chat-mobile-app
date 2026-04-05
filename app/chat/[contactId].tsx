@@ -12,6 +12,8 @@ import {
   Animated,
   KeyboardEvent,
   StatusBar,
+  Modal,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,6 +22,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authService } from '@/services/authService';
 import { messageService, ChatMessage } from '@/services/messageService';
 import { presenceService, UserStatus } from '@/services/presenceService';
+import { useGetProfileQuery } from '@/services/api';
+import { Image } from 'react-native';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const THEME = {
@@ -59,15 +63,25 @@ const THEME = {
 export default function ChatDetailScreen() {
   const router = useRouter();
   const { contactId, name } = useLocalSearchParams();
+  const { data: contactProfile } = useGetProfileQuery(contactId as string, { skip: !contactId });
   const [messages, setMessages]   = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading]     = useState(true);
   const [sending, setSending]     = useState(false);
+  const [showMenu, setShowMenu]   = useState(false);
   const [contactStatus, setContactStatus] = useState<UserStatus>('offline');
   const flatListRef = useRef<FlatList>(null);
   const insets      = useSafeAreaInsets();
   const bottomPad   = useRef(new Animated.Value(0)).current;
-  const currentUser = authService.getCurrentUser();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const user = await authService.getCurrentUser();
+      setCurrentUser(user);
+    };
+    fetchUser();
+  }, []);
 
   // ── Keyboard push-up animation ────────────────────────────────────────────
   useEffect(() => {
@@ -78,7 +92,12 @@ export default function ChatDetailScreen() {
         useNativeDriver: false,
       }).start();
       // Keep a small timeout to ensure the inverted list adjusts its position
-      setTimeout(() => flatListRef.current?.scrollToIndex({ index: 0, animated: true }), 100);
+      // Using scrollToOffset instead of scrollToIndex to prevent crashes on empty lists
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch (e) {}
+      }, 100);
     };
     const hide = (e: KeyboardEvent) => {
       Animated.timing(bottomPad, {
@@ -106,22 +125,22 @@ export default function ChatDetailScreen() {
 
   // ── Load + real-time subscriptions ────────────────────────────────────────
   useEffect(() => {
-    loadChat();
     if (!currentUser) return;
+    loadChat();
 
     // Mark their messages as read the moment we open chat
-    messageService.markMessagesAsRead(currentUser.uid, contactId as string);
+    messageService.markMessagesAsRead(currentUser.id, contactId as string);
 
     // New incoming messages
-    const inCh = messageService.subscribeToMessages(currentUser.uid, (msg) => {
+    const inCh = messageService.subscribeToMessages(currentUser.id, (msg) => {
       if (msg.sender_id === contactId) {
         setMessages(prev => [...prev, msg]);
-        messageService.markMessagesAsRead(currentUser.uid, contactId as string);
+        messageService.markMessagesAsRead(currentUser.id, contactId as string);
       }
     });
 
     // When receiver reads MY messages → flip is_read = true in local state
-    const rcCh = messageService.subscribeToReadReceipts(currentUser.uid, (updated) => {
+    const rcCh = messageService.subscribeToReadReceipts(currentUser.id, (updated) => {
       setMessages(prev =>
         prev.map(m => m.id === updated.id ? { ...m, is_read: true } : m)
       );
@@ -131,13 +150,13 @@ export default function ChatDetailScreen() {
       messageService.removeChannel(inCh);
       messageService.removeChannel(rcCh);
     };
-  }, [contactId]);
+  }, [contactId, currentUser]);
 
   const loadChat = async () => {
     try {
       if (currentUser) {
         const history = await messageService.getChatHistory(
-          currentUser.uid, contactId as string
+          currentUser.id, contactId as string
         );
         setMessages(history);
       }
@@ -150,12 +169,39 @@ export default function ChatDetailScreen() {
     setSending(true);
     try {
       const msg = await messageService.sendMessage(
-        currentUser.uid, contactId as string, inputText.trim()
+        currentUser.id, contactId as string, inputText.trim()
       );
-      setMessages(prev => [...prev, msg]);
+      setMessages(prev => [...prev, msg]); // Append new message (state is oldest-to-newest)
       setInputText('');
     } catch (e) { console.error(e); }
     finally     { setSending(false); }
+  };
+
+  const handleClearChat = async () => {
+    if (!currentUser || !contactId) return;
+    Alert.alert(
+      'Clear Chat',
+      'Are you sure you want to clear all messages in this chat? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Clear', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await messageService.clearChat(currentUser.id, contactId as string);
+              setMessages([]);
+            } catch (e) {
+              console.error(e);
+              Alert.alert('Error', 'Failed to clear chat history');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ── Read receipt ticks ─────────────────────────────────────────────────────
@@ -217,7 +263,14 @@ export default function ChatDetailScreen() {
 
         {/* Avatar */}
         <View style={styles.avatar}>
-          <Text style={styles.avatarLetter}>{String(name)?.[0]?.toUpperCase() || '?'}</Text>
+          {contactProfile?.avatar_url ? (
+            <Image 
+              source={{ uri: contactProfile.avatar_url }} 
+              style={{ width: '100%', height: '100%', borderRadius: 20 }} 
+            />
+          ) : (
+            <Text style={styles.avatarLetter}>{String(name)?.[0]?.toUpperCase() || '?'}</Text>
+          )}
           {/* Online dot */}
           <View style={[
             styles.onlineDot,
@@ -250,11 +303,34 @@ export default function ChatDetailScreen() {
           >
             <Ionicons name="videocam-outline" size={23} color={THEME.iconTint} />
           </Pressable>
-          <Pressable hitSlop={10} style={styles.headerIcon}>
+          <Pressable hitSlop={10} style={styles.headerIcon} onPress={() => setShowMenu(true)}>
             <Ionicons name="ellipsis-vertical" size={21} color={THEME.iconTint} />
           </Pressable>
         </View>
       </View>
+
+      {/* ── Dropdown Menu Modal ────────────────────────────────────── */}
+      <Modal visible={showMenu} transparent={true} animationType="fade" onRequestClose={() => setShowMenu(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
+          <View style={[styles.menuContainer, { top: insets.top + 50 }]}>
+            <Pressable style={styles.menuItem} onPress={() => { setShowMenu(false); /* TODO: Block User */ }}>
+              <Text style={styles.menuText}>Block User</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => { setShowMenu(false); /* TODO: Search */ }}>
+              <Text style={styles.menuText}>Search</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => { setShowMenu(false); /* TODO: Chat Theme */ }}>
+              <Text style={styles.menuText}>Chat Theme</Text>
+            </Pressable>
+            <Pressable style={styles.menuItem} onPress={() => { setShowMenu(false); handleClearChat(); }}>
+              <Text style={styles.menuText}>Clear Chat</Text>
+            </Pressable>
+            <Pressable style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setShowMenu(false); /* TODO: Export Chat */ }}>
+              <Text style={styles.menuText}>Export Chat</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* ── Dark Gradient Background + Messages ─────────────────── */}
       <LinearGradient
@@ -367,6 +443,34 @@ const styles = StyleSheet.create({
 
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   headerIcon: { padding: 9 },
+
+  // ── Menu Dropdown ────────────────────────────────────────────────────────────
+  menuOverlay: { flex: 1 },
+  menuContainer: {
+    position: 'absolute',
+    right: 14,
+    backgroundColor: '#1E1B4B', // Matches dark purple theme
+    borderRadius: 12,
+    width: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  menuItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  menuText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '500',
+  },
 
   // ── Gradient fill ────────────────────────────────────────────────────────────
   gradientFill: { flex: 1 },

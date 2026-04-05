@@ -198,6 +198,22 @@ export const messageService = {
     });
   },
 
+  /**
+   * Deletes all messages between two users (Clear Chat).
+   */
+  async clearChat(userId: string, contactId: string) {
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${contactId}),and(sender_id.eq.${contactId},receiver_id.eq.${userId})`);
+
+    if (error) {
+      console.error('[messageService] clearChat error:', error);
+      throw error;
+    }
+    return true;
+  },
+
   removeChannel(channel: any) {
     supabase.removeChannel(channel);
   }

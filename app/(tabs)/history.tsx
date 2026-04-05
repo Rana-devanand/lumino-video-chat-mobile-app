@@ -42,14 +42,14 @@ export default function HistoryScreen() {
       <View style={styles.avatarContainer}>
         <Image source={{ uri: item.avatar }} style={styles.avatar} />
         <View style={[
-          styles.typeBadge, 
-          item.type === 'missed' ? styles.badgeMissed : 
-          item.type === 'incoming' ? styles.badgeIncoming : styles.badgeOutgoing
+          styles.typeBadge,
+          item.type === 'missed' ? styles.badgeMissed :
+            item.type === 'incoming' ? styles.badgeIncoming : styles.badgeOutgoing
         ]}>
-          <Ionicons 
-            name={item.type === 'outgoing' ? 'arrow-up' : 'arrow-down'} 
-            size={12} 
-            color="#FFFFFF" 
+          <Ionicons
+            name={item.type === 'outgoing' ? 'arrow-up' : 'arrow-down'}
+            size={12}
+            color="#FFFFFF"
           />
         </View>
       </View>
@@ -76,12 +76,12 @@ export default function HistoryScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image source={{ uri: 'https://i.pravatar.cc/150?u=sarah' }} style={styles.userAvatar} />
-          <Text style={styles.brandName}>Lumina</Text>
+          <Text style={styles.brandName}>lumino</Text>
         </View>
         <Ionicons name="notifications" size={24} color="#4F46E5" />
       </View>
@@ -107,7 +107,7 @@ export default function HistoryScreen() {
         <Text style={styles.summaryText}>
           You spent 4.5 hours in calls this week. Keep up the high-quality connections!
         </Text>
-        
+
         <Pressable style={styles.summaryButton}>
           <Text style={styles.summaryButtonText}>VIEW ANALYTICS</Text>
         </Pressable>

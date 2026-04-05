@@ -8,8 +8,11 @@ export function SplashScreen() {
   return (
     <View style={styles.container}>
       {/* Premium subtle gradient background */}
+      {/* Premium blue and white gradient background */}
       <LinearGradient
-        colors={['#F8F9FB', '#EDF0F7']}
+        colors={['#E6F0FF', '#FFFFFF']}
+        start={{ x: 0.5, y: 0.3 }}
+        end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
       
@@ -23,14 +26,9 @@ export function SplashScreen() {
           />
         </View>
 
-        <Text style={styles.title}>Lumina</Text>
+        <Text style={styles.title}>Lumino</Text>
         <Text style={styles.tagline}>CONNECT INSTANTLY</Text>
 
-        <View style={styles.dotsContainer}>
-          <View style={[styles.dot, styles.activeDot]} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-        </View>
       </View>
     </View>
   );

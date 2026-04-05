@@ -1,17 +1,17 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
 import { useEffect, useState } from 'react';
 import * as ExpoSplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { firebase } from '@react-native-firebase/app';
-import auth from '@react-native-firebase/auth'; 
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/utils/supabase';
+import { Provider } from 'react-redux';
+import { store } from '@/lib/store';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SplashScreen } from '@/components/splash-screen';
@@ -20,28 +20,20 @@ import { authService } from '@/services/authService';
 import { soundService } from '@/services/soundService';
 import { presenceService } from '@/services/presenceService';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyB1d0tISuiw55cKrkXhzyaIW4BGFYZ415o",
-  appId: "1:618427604336:android:b84cd491409bd29a1943b5",
-  projectId: "lumino-16c60",
-  storageBucket: "lumino-16c60.firebasestorage.app",
-};
-
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
 
 ExpoSplashScreen.preventAutoHideAsync();
 
 // --- Global Incoming Call Overlay ---
-const IncomingCallOverlay = ({ room, onAccept, onDecline }: 
+const IncomingCallOverlay = ({ room, onAccept, onDecline }:
   { room: VideoRoom, onAccept: () => void, onDecline: () => void }) => {
-  const [callerName, setCallerName] = useState('Lumina User');
+  const [callerName, setCallerName] = useState('lumino User');
+  const [callerAvatar, setCallerAvatar] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCaller = async () => {
       const profile = await authService.getProfile(room.host_id);
       if (profile?.full_name) setCallerName(profile.full_name);
+      if (profile?.avatar_url) setCallerAvatar(profile.avatar_url);
     };
     fetchCaller();
     soundService.playRingtone();
@@ -52,11 +44,18 @@ const IncomingCallOverlay = ({ room, onAccept, onDecline }:
     <View style={styles.overlayContainer}>
       <View style={styles.overlayCard}>
         <View style={styles.callerAvatar}>
-          <Text style={styles.avatarTextInitial}>{callerName[0]}</Text>
+          {callerAvatar ? (
+            <Image 
+              source={{ uri: callerAvatar }} 
+              style={{ width: '100%', height: '100%', borderRadius: 45 }} 
+            />
+          ) : (
+            <Text style={styles.avatarTextInitial}>{callerName[0]}</Text>
+          )}
         </View>
         <Text style={styles.incomingTitle}>Incoming Video Call</Text>
         <Text style={styles.callerNameText}>{callerName}</Text>
-        
+
         <View style={styles.actionRow}>
           <Pressable style={[styles.actionBtn, styles.declineBtn]} onPress={onDecline}>
             <Ionicons name="call" size={28} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
@@ -79,7 +78,7 @@ export default function RootLayout() {
 
   // 1. Auth State Monitoring
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged((user) => {
+    const unsubscribe = authService.onAuthChange((user) => {
       console.log('[RootLayout] Auth State Changed:', user ? 'Logged In' : 'Logged Out');
       setIsAuthenticated(!!user);
       setTimeout(() => setShowSplash(false), 2000);
@@ -91,16 +90,22 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const user = authService.getCurrentUser();
-    if (!user) return;
+    let subscription: any = null;
+    let isMounted = true;
 
-    const subscription = videoCallService.listenForIncomingCalls(user.uid, (room) => {
-      console.log('[RootLayout] New Incoming Call detected:', room.id);
-      setIncomingCall(room);
+    authService.getCurrentUser().then(user => {
+      if (!isMounted || !user) return;
+      subscription = videoCallService.listenForIncomingCalls(user.id, (room) => {
+        console.log('[RootLayout] New Incoming Call detected:', room.id);
+        setIncomingCall(room);
+      });
     });
 
     return () => {
-      videoCallService.removeChannel(subscription);
+      isMounted = false;
+      if (subscription) {
+        videoCallService.removeChannel(subscription);
+      }
     };
   }, [isAuthenticated]);
 
@@ -108,18 +113,30 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const user = authService.getCurrentUser();
-    if (!user) return;
+    let channel: any = null;
+    let isMounted = true;
 
-    const channel = presenceService.trackPresence(user.uid);
+    authService.getCurrentUser().then(user => {
+      if (!isMounted || !user) return;
+      
+      // Cleanup any dangling HMR channels before creating a new one
+      const existing = supabase.getChannels().find(c => c.topic === 'realtime:global-presence');
+      if (existing) { supabase.removeChannel(existing); }
+
+      channel = presenceService.trackPresence(user.id);
+    });
+
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [isAuthenticated]);
 
   // 4. Navigation logic
   useEffect(() => {
-    if (isAuthenticated === null) return; 
+    if (isAuthenticated === null) return;
     if (isAuthenticated) {
       router.replace('/(tabs)');
     } else {
@@ -159,44 +176,47 @@ export default function RootLayout() {
   }, [url]);
 
   useEffect(() => {
-    ExpoSplashScreen.hideAsync().catch(() => {});
+    ExpoSplashScreen.hideAsync().catch(() => { });
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <View style={{ flex: 1 }}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(onboarding)" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="settings" />
-            <Stack.Screen name="room" />
-            <Stack.Screen name="chat/[contactId]" />
-            <Stack.Screen name="call-summary" />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </Stack>
+    <Provider store={store}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <View style={{ flex: 1 }}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(onboarding)" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="settings" />
+              <Stack.Screen name="room" />
+              <Stack.Screen name="chat/[contactId]" />
+              <Stack.Screen name="call-summary" />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
 
-          {/* Incoming Call UI Overlay */}
-          {incomingCall && (
-            <IncomingCallOverlay 
-              room={incomingCall} 
-              onAccept={handleAcceptCall} 
-              onDecline={handleDeclineCall} 
-            />
-          )}
+            {/* Incoming Call UI Overlay */}
+            {incomingCall && (
+              <IncomingCallOverlay
+                room={incomingCall}
+                onAccept={handleAcceptCall}
+                onDecline={handleDeclineCall}
+              />
+            )}
 
-          {/* Premium Splash Overlay (Absolute) */}
-          {(showSplash || isAuthenticated === null) && (
-            <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
-              <SplashScreen />
-            </View>
-          )}
-        </View>
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </GestureHandlerRootView>
+            {/* Premium Splash Overlay (Absolute) */}
+            {(showSplash || isAuthenticated === null) && (
+              <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
+                <SplashScreen />
+              </View>
+            )}
+          </View>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </Provider>
   );
+
 }
 
 const styles = StyleSheet.create({

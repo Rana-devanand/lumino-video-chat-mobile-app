@@ -34,19 +34,26 @@ export default function TabLayout() {
   const TAB_H = Math.max(60, ICON_SIZE + 8 + LABEL_SIZE + 16 + insets.bottom);
 
   React.useEffect(() => {
-    const user = authService.getCurrentUser();
-    if (!user) return;
+    const setupListener = async () => {
+      const user = await authService.getCurrentUser();
+      if (!user) return;
 
-    const channel = videoCallService.listenForIncomingCalls(user.uid, (room) => {
-      soundService.playRingtone();
-      router.push({
-        pathname: '/room',
-        params: { roomId: room.id, mode: 'callee', name: 'Inbound Call' },
+      const channel = videoCallService.listenForIncomingCalls(user.id, (room) => {
+        soundService.playRingtone();
+        router.push({
+          pathname: '/room',
+          params: { roomId: room.id, mode: 'callee', name: 'Inbound Call' },
+        });
       });
-    });
+
+      return channel;
+    };
+
+    let activeChannel: any;
+    setupListener().then(ch => { activeChannel = ch; });
 
     return () => {
-      videoCallService.removeChannel(channel);
+      if (activeChannel) videoCallService.removeChannel(activeChannel);
       soundService.stopAll();
     };
   }, []);
@@ -127,12 +134,12 @@ export default function TabLayout() {
           }}
         />
         <MaterialTopTabs.Screen
-          name="contacts"
+          name="groups"
           options={{
             tabBarIcon: ({ focused }: { focused: boolean }) => (
               <TabItem
                 name={focused ? 'people' : 'people-outline'}
-                title="Contacts"
+                title="Groups"
                 focused={focused}
                 tabW={TAB_W}
                 iconSize={ICON_SIZE}

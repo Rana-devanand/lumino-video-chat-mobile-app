@@ -1,11 +1,81 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Alert, StatusBar } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
+import { authService } from '@/services/authService';
+import { useGetProfileQuery, useUpdateAvatarMutation } from '@/services/api';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // RTK Query hooks
+  const { data: profile, isLoading: loading } = useGetProfileQuery(userId || '', { skip: !userId });
+  const [updateAvatar, { isLoading: isUploading }] = useUpdateAvatarMutation();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const user = await authService.getCurrentUser();
+      if (user) setUserId(user.id);
+    };
+    fetchUser();
+  }, []);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    try {
+      setIsLoggingOut(true);
+      await authService.signOut();
+      router.replace('/(auth)/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      Alert.alert('Logout Error', 'Unable to sign out. Please try again.');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  const pickImage = async () => {
+    if (!profile) return;
+    
+    // Request permission
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    console.log(`[Settings] Media library permission status: ${status}`);
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Denied',
+        'Sorry, we need camera roll permissions to update your profile picture. Please enable them in your device settings.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    console.log('[Settings] Launching image library...');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      try {
+        console.log(`[Settings] Uploading image: ${result.assets[0].uri}`);
+        const newUrl = await authService.uploadAvatar(profile.id, result.assets[0].uri);
+        
+        // Update via mutation to trigger cache invalidation
+        await updateAvatar({ userId: profile.id, publicUrl: newUrl }).unwrap();
+        
+        Alert.alert('Success', 'Profile picture updated successfully');
+      } catch (error: any) {
+        Alert.alert('Upload Failed', error.message || 'Failed to upload profile picture. Please try again.');
+        console.error('[Settings] uploadAvatar error:', error);
+      }
+    }
+  };
+
   const sections = [
     {
       title: 'ACCOUNT',
@@ -26,13 +96,14 @@ export default function SettingsScreen() {
       title: 'SUPPORT',
       items: [
         { id: 'help', icon: 'help-circle-outline', title: 'Help Center', color: '#6B7280' },
-        { id: 'about', icon: 'information-circle-outline', title: 'About Lumina', color: '#6B7280' },
+        { id: 'about', icon: 'information-circle-outline', title: 'About lumino', color: '#6B7280' },
       ],
     },
   ];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#111827" />
@@ -42,14 +113,48 @@ export default function SettingsScreen() {
 
       {/* Profile Card */}
       <View style={styles.profileCard}>
-        <Image source={{ uri: 'https://i.pravatar.cc/150?u=sarah' }} style={styles.profileAvatar} />
-        <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>Sarah Miller</Text>
-          <Text style={styles.profileEmail}>sarah.m@example.com</Text>
-        </View>
-        <Pressable style={styles.editButton}>
-          <Text style={styles.editButtonText}>EDIT</Text>
-        </Pressable>
+        {loading ? (
+          <ActivityIndicator size="small" color="#4F46E5" style={{ flex: 1 }} />
+        ) : profile ? (
+          <>
+            <Pressable 
+              style={styles.avatarContainer} 
+              onPress={pickImage} 
+              disabled={isUploading}
+              hitSlop={15}
+            >
+              {profile.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.initialsAvatar}>
+                  <Text style={styles.initialsText}>
+                    {profile.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.editBadge}>
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Ionicons name="camera" size={14} color="#FFF" />
+                )}
+              </View>
+            </Pressable>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{profile.full_name || 'Lumino User'}</Text>
+              <Text style={styles.profileEmail}>{profile.email || profile.phone_number}</Text>
+            </View>
+            <Pressable 
+              style={styles.editButton} 
+              onPress={pickImage}
+              hitSlop={10}
+            >
+              <Text style={styles.editButtonText}>{isUploading ? '...' : 'EDIT'}</Text>
+            </Pressable>
+          </>
+        ) : (
+          <Text style={styles.profileEmail}>Failed to load profile</Text>
+        )}
       </View>
 
       {/* Settings Sections */}
@@ -58,13 +163,16 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>{section.title}</Text>
           <View style={styles.sectionBlock}>
             {section.items.map((item, index) => (
-              <Pressable 
-                key={item.id} 
-                style={[
-                  styles.settingItem, 
-                  index < section.items.length - 1 && styles.settingItemBorder
-                ]}
-              >
+                <Pressable
+                  key={item.id}
+                  style={[
+                    styles.settingItem,
+                    index < section.items.length - 1 && styles.settingItemBorder
+                  ]}
+                  onPress={() => {
+                    if (item.id === 'profile') router.push('/profile-settings');
+                  }}
+                >
                 <View style={[styles.iconWrapper, { backgroundColor: `${item.color}15` }]}>
                   <Ionicons name={item.icon as any} size={20} color={item.color} />
                 </View>
@@ -77,9 +185,19 @@ export default function SettingsScreen() {
       ))}
 
       {/* Log Out Button */}
-      <Pressable style={styles.logoutButton}>
-        <Ionicons name="log-out-outline" size={20} color="#E02424" />
-        <Text style={styles.logoutText}>Log Out</Text>
+      <Pressable 
+        style={[styles.logoutButton, isLoggingOut && { opacity: 0.7 }]} 
+        onPress={handleLogout}
+        disabled={isLoggingOut}
+      >
+        {isLoggingOut ? (
+          <ActivityIndicator size="small" color="#E02424" />
+        ) : (
+          <>
+            <Ionicons name="log-out-outline" size={20} color="#E02424" />
+            <Text style={styles.logoutText}>Log Out</Text>
+          </>
+        )}
       </Pressable>
 
     </ScrollView>
@@ -123,12 +241,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
     shadowRadius: 10,
     elevation: 2,
+    minHeight: 100,
   },
-  profileAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  avatarContainer: {
+    position: 'relative',
     marginRight: 16,
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F3F4F6',
+  },
+  initialsAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#4F46E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    backgroundColor: '#4F46E5',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  initialsText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   profileInfo: {
     flex: 1,

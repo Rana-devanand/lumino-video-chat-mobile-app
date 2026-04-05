@@ -8,12 +8,15 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  Image,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authService } from '@/services/authService';
 import { messageService, Conversation } from '@/services/messageService';
+import { sharingService } from '@/services/sharingService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(iso: string) {
@@ -49,9 +52,9 @@ export default function ChatScreen() {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const user = authService.getCurrentUser();
+      const user = await authService.getCurrentUser();
       if (user) {
-        const data = await messageService.getConversations(user.uid);
+        const data = await messageService.getConversations(user.id);
         setConversations(data);
       }
     } catch (e) {
@@ -68,8 +71,8 @@ export default function ChatScreen() {
 
   const openChat = (conv: Conversation) => {
     router.push({
-      pathname: `/chat/${conv.contact_id}`,
-      params: { name: conv.full_name, avatar: conv.avatar_url || '' },
+      pathname: '/chat/[contactId]',
+      params: { contactId: conv.contact_id, name: conv.full_name, avatar: conv.avatar_url || '' },
     });
   };
 
@@ -94,7 +97,14 @@ export default function ChatScreen() {
       >
         {/* Avatar */}
         <View style={[styles.avatar, { backgroundColor: bgColor }]}>
-          <Text style={styles.avatarLetter}>{initials}</Text>
+          {item.avatar_url ? (
+            <Image
+              source={{ uri: item.avatar_url }}
+              style={{ width: '100%', height: '100%', borderRadius: 26 }}
+            />
+          ) : (
+            <Text style={styles.avatarLetter}>{initials}</Text>
+          )}
         </View>
 
         {/* Content */}
@@ -139,16 +149,26 @@ export default function ChatScreen() {
 
   return (
     <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
       {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.title}>Messages</Text>
-        <Pressable
-          style={styles.newChatBtn}
-          onPress={() => router.push('/(tabs)/contacts')}
-          hitSlop={8}
-        >
-          <Ionicons name="create-outline" size={22} color="#5B58F6" />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Pressable
+            style={styles.newChatBtn}
+            onPress={() => sharingService.shareInvite()}
+            hitSlop={8}
+          >
+            <Ionicons name="share-social-outline" size={22} color="#5B58F6" />
+          </Pressable>
+          <Pressable
+            style={styles.newChatBtn}
+            onPress={() => router.push('/contacts-list')}
+            hitSlop={8}
+          >
+            <Ionicons name="create-outline" size={22} color="#5B58F6" />
+          </Pressable>
+        </View>
       </View>
 
       {/* ── Search ── */}
@@ -199,7 +219,7 @@ export default function ChatScreen() {
               : 'Go to Contacts and start chatting!'}
           </Text>
           {!searchQuery && (
-            <Pressable style={styles.goBtn} onPress={() => router.push('/(tabs)/contacts')}>
+            <Pressable style={styles.goBtn} onPress={() => router.push('/contacts-list')}>
               <Text style={styles.goBtnText}>Open Contacts</Text>
             </Pressable>
           )}
@@ -209,7 +229,7 @@ export default function ChatScreen() {
       {/* ── FAB → New chat via contacts ── */}
       <Pressable
         style={[styles.fab, { bottom: insets.bottom + 100 }]}
-        onPress={() => router.push('/(tabs)/contacts')}
+        onPress={() => router.push('/contacts-list')}
       >
         <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
       </Pressable>

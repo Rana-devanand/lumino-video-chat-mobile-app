@@ -1,6 +1,6 @@
-# EAS Build & Setup Guide for Lumina
+# EAS Build & Setup Guide for lumino
 
-This guide details the steps to generate, test, and release the Lumina app using Expo Application Services (EAS).
+This guide details the steps to generate, test, and release the lumino app using Expo Application Services (EAS).
 
 ---
 
@@ -77,3 +77,5 @@ This will guide you through uploading the AAB file to the Google Play Console.
 
 ## port running
 npx http-server ./web-redirect -p 3000
+
+

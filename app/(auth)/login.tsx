@@ -66,12 +66,15 @@ function stripMask(masked: string): string {
 
 export default function LoginScreen() {
   const router = useRouter();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // India default
   const [rawDigits, setRawDigits] = useState('');
   const [displayValue, setDisplayValue] = useState('');
   const [pickerVisible, setPickerVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [mode, setMode] = useState<'signup' | 'login'>('signup'); // 'signup' or 'login'
 
 
   const inputRef = useRef<TextInput>(null);
@@ -97,7 +100,9 @@ export default function LoginScreen() {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const isValid = rawDigits.length === selectedCountry.maxDigits;
+  const isValid = mode === 'signup' 
+    ? (fullName.trim().length >= 2 && email.includes('@') && email.includes('.') && rawDigits.length === selectedCountry.maxDigits)
+    : (rawDigits.length === selectedCountry.maxDigits);
 
   const handleContinue = async () => {
     if (!isValid || loading) return;
@@ -105,12 +110,21 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const fullPhone = `${selectedCountry.dialCode}${rawDigits}`;
-      const confirmation = await authService.signInWithPhone(fullPhone);
-      authSession.setConfirmation(confirmation);
+      
+      let targetEmail = email;
+      let targetName = fullName;
+
+      if (mode === 'login') {
+        const foundEmail = await authService.signInWithPhone(fullPhone);
+        targetEmail = foundEmail;
+        targetName = 'Welcome Back'; // We'll fetch real name after login
+      } else {
+        await authService.signInWithEmail(email, fullName, fullPhone);
+      }
       
       router.push({
         pathname: '/(auth)/verify',
-        params: { phone: fullPhone },
+        params: { email: targetEmail, phone: fullPhone, name: targetName },
       });
     } catch (error: any) {
       alert(error?.message || 'Failed to send OTP. Check your network.');
@@ -130,15 +144,63 @@ export default function LoginScreen() {
       >
         <AuthHeader type="login" />
 
+        {/* ── Mode Toggle ── */}
+        <View style={styles.toggleContainer}>
+          <Pressable 
+            style={[styles.toggleButton, mode === 'signup' && styles.toggleButtonActive]} 
+            onPress={() => setMode('signup')}
+          >
+            <Text style={[styles.toggleText, mode === 'signup' && styles.toggleTextActive]}>Join</Text>
+          </Pressable>
+          <Pressable 
+            style={[styles.toggleButton, mode === 'login' && styles.toggleButtonActive]} 
+            onPress={() => setMode('login')}
+          >
+            <Text style={[styles.toggleText, mode === 'login' && styles.toggleTextActive]}>Login</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.textContainer}>
-          <Text style={styles.title}>Enter your mobile number</Text>
+          <Text style={styles.title}>{mode === 'signup' ? 'Join Lumino' : 'Welcome Back'}</Text>
           <Text style={styles.subtitle}>
-            We'll send a secure verification code to your device to keep your account safe.
+            {mode === 'signup' 
+              ? "Enter your details below. We'll send a secure verification code to your email."
+              : "Enter your registered phone number. We'll send an OTP to your linked Gmail account."
+            }
           </Text>
         </View>
 
+        {mode === 'signup' && (
+          <>
+            <View style={styles.inputSection}>
+              <Text style={styles.inputLabel}>FULL NAME</Text>
+              <TextInput
+                style={styles.textInput}
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Your Name"
+                placeholderTextColor="#AAAAAA"
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.inputSection}>
+              <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+              <TextInput
+                style={styles.textInput}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                placeholderTextColor="#AAAAAA"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          </>
+        )}
+
         <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>PHONE NUMBER</Text>
+          <Text style={styles.inputLabel}>PHONE NUMBER (FOR CONTACT SYNC)</Text>
 
           <View style={styles.phoneRow}>
             {/* ── Country Picker Trigger ── */}
@@ -161,7 +223,6 @@ export default function LoginScreen() {
               placeholder={selectedCountry.mask.replace(/#/g, '0')}
               placeholderTextColor="#AAAAAA"
               keyboardType="phone-pad"
-              autoFocus
               maxLength={selectedCountry.mask.length}
             />
           </View>
@@ -175,7 +236,7 @@ export default function LoginScreen() {
         </View>
 
         {/* ── Privacy Guarantee ── */}
-        <View style={styles.privacyBox}>
+        {/* <View style={styles.privacyBox}>
           <View style={styles.shieldIcon}>
             <Ionicons name="shield-checkmark" size={24} color="#4440EB" />
           </View>
@@ -186,7 +247,7 @@ export default function LoginScreen() {
               marketing without consent.
             </Text>
           </View>
-        </View>
+        </View> */}
 
         <View style={styles.footer}>
           <TouchableOpacity
@@ -266,13 +327,55 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   scrollContent: { flexGrow: 1, paddingHorizontal: 30, paddingBottom: 40 },
+  
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E8E9F0',
+    borderRadius: 30,
+    padding: 6,
+    marginBottom: 30,
+    marginTop: 10,
+  },
+  toggleButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  toggleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#666',
+  },
+  toggleTextActive: {
+    color: '#4440EB',
+  },
 
   textContainer: { alignItems: 'center', marginBottom: 40 },
   title: { fontSize: 28, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', marginBottom: 12 },
   subtitle: { fontSize: 15, color: '#666', textAlign: 'center', lineHeight: 22, opacity: 0.8 },
 
-  inputSection: { marginBottom: 30 },
-  inputLabel: { fontSize: 12, fontWeight: '700', color: '#666', letterSpacing: 1, marginBottom: 12 },
+  inputSection: { marginBottom: 25 },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: '#666', letterSpacing: 1, marginBottom: 8 },
+
+  textInput: {
+    backgroundColor: '#E8E9F0',
+    borderRadius: 16,
+    height: 60,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
 
   phoneRow: {
     flexDirection: 'row',

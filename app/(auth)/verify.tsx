@@ -19,12 +19,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '@/services/authService';
 import { authSession } from '@/lib/auth-session';
 
-const OTP_LENGTH = 6;
+const OTP_LENGTH = 8;
 const RESEND_SECONDS = 30;
+
+// ── Email Masking Utility ──
+function maskEmail(email: string) {
+  if (!email || !email.includes('@')) return email;
+  const [user, domain] = email.split('@');
+  if (user.length <= 2) return `${user}***@${domain}`;
+  return `${user.substring(0, 2)}***@${domain}`;
+}
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const { phone } = useLocalSearchParams();
+  const { email, phone, name } = useLocalSearchParams();
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [timer, setTimer] = useState(RESEND_SECONDS);
@@ -33,7 +41,7 @@ export default function VerifyScreen() {
   const [syncing, setSyncing] = useState(false); // New state to track DB sync
   const [focusedIndex, setFocusedIndex] = useState(0);
 
-  console.log(`[Firebase Auth] verify.tsx: Loaded with phone: ${phone}`);
+  console.log(`[Supabase Auth] verify.tsx: Loaded with email: ${email}`);
 
   const inputs = useRef<(TextInput | null)[]>(Array(OTP_LENGTH).fill(null));
 
@@ -43,9 +51,7 @@ export default function VerifyScreen() {
       if (user) {
         setSyncing(true);
         try {
-          // Add a small delay to ensure the referrerId has been saved by RootLayout
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
+          // Sync with profile metadata (name/phone)
           const rid = await AsyncStorage.getItem('referrerId');
           await authService.syncUserWithSupabase(user, rid);
           if (rid) await AsyncStorage.removeItem('referrerId');
@@ -76,9 +82,7 @@ export default function VerifyScreen() {
     setLoading(true);
     try {
       // Re-trigger sign in
-      const fullPhone = String(phone);
-      const confirmation = await authService.signInWithPhone(fullPhone);
-      authSession.setConfirmation(confirmation);
+      await authService.signInWithEmail(String(email), String(name), String(phone));
       
       setOtp(Array(OTP_LENGTH).fill(''));
       setTimer(RESEND_SECONDS);
@@ -134,13 +138,10 @@ export default function VerifyScreen() {
 
     setLoading(true);
     try {
-      const confirmation = authSession.getConfirmation();
-      if (!confirmation) {
-        throw new Error('Session expired. Please go back and try again.');
-      }
+      if (!email) throw new Error('Session expired. Please try again.');
 
       const otpString = otp.join('');
-      await authService.confirmOTP(confirmation, otpString);
+      await authService.verifyOTP(String(email), otpString);
       
       // onAuthChange listener will handle the sync and navigation
     } catch (error: any) {
@@ -177,17 +178,17 @@ export default function VerifyScreen() {
 
           {/* ── Heading ── */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>Verify your number</Text>
+            <Text style={styles.title}>Confirm your OTP</Text>
             <Text style={styles.subtitle}>
-              Enter the 6-digit code sent to{' '}
+              Enter the {OTP_LENGTH}-digit code sent to
             </Text>
 
-            {/* Phone + Change number row */}
+            {/* Email + Change number row */}
             <View style={styles.phoneRow}>
-              <Text style={styles.phoneHighlight}>{maskedPhone}</Text>
+              <Text style={styles.phoneHighlight}>{maskEmail(String(email))}</Text>
               <TouchableOpacity onPress={handleChangeNumber} style={styles.changeBadge}>
                 <Ionicons name="pencil" size={12} color="#4440EB" />
-                <Text style={styles.changeText}>Change</Text>
+                <Text style={styles.changeText}>Edit</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -309,13 +310,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 36,
-    gap: 8,
+    gap: 4, // Reduced gap to fit 8 boxes
   },
   otpBox: {
     flex: 1,
-    height: 64,
+    height: 55, // Reduced height
     backgroundColor: '#F2F3F8',
-    borderRadius: 16,
+    borderRadius: 12, // Reduced border radius
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,

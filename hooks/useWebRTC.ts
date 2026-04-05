@@ -102,7 +102,7 @@ export function useWebRTC() {
       return null;
     }
 
-    const currentUser = authService.getCurrentUser();
+    const currentUser = await authService.getCurrentUser();
     if (!currentUser) {
       console.error('No authenticated user found');
       setCallStatus('idle');
@@ -110,7 +110,7 @@ export function useWebRTC() {
     }
 
     // 1. Create a new room in Supabase with optional guest
-    const newRoomId = await videoCallService.createRoom(currentUser.uid, guestId);
+    const newRoomId = await videoCallService.createRoom(currentUser.id, guestId);
     setRoomId(newRoomId);
 
     const peerConnection = createPeerConnection(newRoomId, 'caller');

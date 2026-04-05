@@ -1,86 +1,80 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TextInput, 
-  Pressable, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  Pressable,
   ActivityIndicator,
   Alert,
   Modal,
   TouchableOpacity,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { authService } from '@/services/authService';
 import { contactService, RegisteredContact } from '@/services/contactService';
 import { groupService, Group } from '@/services/groupService';
+import { sharingService } from '@/services/sharingService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { videoCallService } from '@/services/videoCallService';
 import { ContactPicker } from '@/components/ContactPicker';
+import { 
+  useGetProfileQuery, 
+  useGetContactsQuery, 
+  useGetGroupsQuery 
+} from '@/services/api';
+import { Image } from 'react-native';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [contacts, setContacts] = useState<RegisteredContact[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
 
-  // Modal states
+  // RTK Query hooks
+  const { data: profile, isLoading: profileLoading } = useGetProfileQuery(userId || '', { skip: !userId });
+  const { data: contactsData, isLoading: contactsLoading } = useGetContactsQuery(userId || '', { skip: !userId });
+  const { data: groupsData, isLoading: groupsLoading } = useGetGroupsQuery(userId || '', { skip: !userId });
+
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerMode, setPickerMode] = useState<'call' | 'group'>('call');
   const [groupNameModalVisible, setGroupNameModalVisible] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await authService.getCurrentUser();
+      if (currentUser) setUserId(currentUser.id);
+    };
+    fetchUser();
+  }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const currentUser = authService.getCurrentUser();
-      setUser(currentUser);
-      
-      if (currentUser) {
-        // Parallel load contacts and groups
-        const [registeredContacts, userGroups] = await Promise.all([
-          contactService.getRegisteredContacts(currentUser.uid, []),
-          groupService.getUserGroups(currentUser.uid)
-        ]);
-        
-        setContacts(registeredContacts);
-        setGroups(userGroups);
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const contacts = contactsData || [];
+  const groups = groupsData || [];
+  const loading = profileLoading || contactsLoading || groupsLoading || !userId || localLoading;
 
   const handleCreateRoom = async (selectedIds: string[]) => {
-    if (!user) return;
+    if (!userId) return;
     try {
-      setLoading(true);
+      setLocalLoading(true);
       // Start a group call room
-      const roomIds = await videoCallService.createGroupCall(user.uid, selectedIds);
-      
+      await videoCallService.createGroupCall(userId, selectedIds);
+
       // Navigate to the first room created (or a special group room if we had one)
       // For now, we move to the room view
       router.push({
         pathname: '/room',
-        params: { contactId: selectedIds[0], mode: 'caller' } 
+        params: { contactId: selectedIds[0], mode: 'caller' }
       });
-      
+
       Alert.alert('Group Call', 'Initiating call with participants...');
     } catch (error) {
       Alert.alert('Error', 'Failed to start group call');
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -99,34 +93,46 @@ export default function HomeScreen() {
   };
 
   const handleFinalizeGroup = async () => {
-    if (!newGroupName.trim() || !user) return;
+    if (!newGroupName.trim() || !userId) return;
     try {
-      setLoading(true);
-      await groupService.createGroup(newGroupName, selectedForGroup, user.uid);
+      setLocalLoading(true);
+      await groupService.createGroup(newGroupName, selectedForGroup, userId);
       setGroupNameModalVisible(false);
       setNewGroupName('');
-      loadData();
       Alert.alert('Success', `Group "${newGroupName}" created!`);
     } catch (error) {
       Alert.alert('Error', 'Failed to create group');
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
   return (
     <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        
+
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.headerAvatar}>
-              <Text style={styles.headerAvatarText}>{user?.displayName?.[0] || 'L'}</Text>
+              {profile?.avatar_url ? (
+                <Image 
+                  source={{ uri: profile.avatar_url }} 
+                  style={{ width: '100%', height: '100%', borderRadius: 18 }} 
+                />
+              ) : (
+                <Text style={styles.headerAvatarText}>
+                  {profile?.full_name?.[0] || 'L'}
+                </Text>
+              )}
             </View>
-            <Text style={styles.brandName}>Lumina</Text>
+            <Text style={styles.brandName}>Lumino</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <Pressable onPress={() => sharingService.shareInvite()}>
+              <Ionicons name="share-social-outline" size={24} color="#4440EB" />
+            </Pressable>
             <Pressable onPress={() => router.push('/settings')}>
               <Ionicons name="settings-outline" size={24} color="#4440EB" />
             </Pressable>
@@ -139,8 +145,8 @@ export default function HomeScreen() {
         {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#9BA3AF" style={styles.searchIcon} />
-          <TextInput 
-            placeholder="Search groups or friends..." 
+          <TextInput
+            placeholder="Search groups or friends..."
             style={styles.searchInput}
             placeholderTextColor="#9BA3AF"
           />
@@ -162,7 +168,7 @@ export default function HomeScreen() {
             <Text style={styles.actionText}>New Group</Text>
           </Pressable>
 
-          <Pressable style={styles.actionButton} onPress={() => router.push('/(tabs)/contacts')}>
+          <Pressable style={styles.actionButton} onPress={() => router.push('/contacts-list')}>
             <View style={[styles.actionIcon, { backgroundColor: '#FFF7ED' }]}>
               <Ionicons name="person-add" size={24} color="#F97316" />
             </View>
@@ -173,7 +179,7 @@ export default function HomeScreen() {
         {/* Groups Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Groups</Text>
-          <Pressable onPress={() => {}}>
+          <Pressable onPress={() => { }}>
             <Text style={styles.viewAllText}>Show All</Text>
           </Pressable>
         </View>
@@ -198,7 +204,7 @@ export default function HomeScreen() {
         {/* Inner Circle Section */}
         <View style={[styles.sectionHeader, { marginTop: 32 }]}>
           <Text style={styles.sectionTitle}>Inner Circle</Text>
-          <Pressable onPress={() => router.push('/(tabs)/contacts')}>
+          <Pressable onPress={() => router.push('/contacts-list')}>
             <Text style={styles.viewAllText}>View All</Text>
           </Pressable>
         </View>
@@ -208,8 +214,8 @@ export default function HomeScreen() {
         ) : contacts.length > 0 ? (
           <View style={styles.contactList}>
             {contacts.slice(0, 8).map((contact) => (
-              <Pressable 
-                key={contact.id} 
+              <Pressable
+                key={contact.id}
                 style={styles.contactItem}
                 onPress={() => router.push({
                   pathname: '/chat/[contactId]',
@@ -217,14 +223,21 @@ export default function HomeScreen() {
                 })}
               >
                 <View style={styles.contactAvatar}>
-                  <Text style={styles.contactAvatarText}>{contact.full_name?.[0] || '?'}</Text>
+                  {contact.avatar_url ? (
+                    <Image 
+                      source={{ uri: contact.avatar_url }} 
+                      style={{ width: '100%', height: '100%', borderRadius: 15 }} 
+                    />
+                  ) : (
+                    <Text style={styles.contactAvatarText}>{contact.full_name?.[0] || '?'}</Text>
+                  )}
                   <View style={styles.onlineStatus} />
                 </View>
                 <View style={styles.contactInfo}>
                   <Text style={styles.contactName}>{contact.full_name}</Text>
                   <Text style={styles.contactStatus}>Recently active</Text>
                 </View>
-                <Pressable 
+                <Pressable
                   style={styles.callButton}
                   onPress={() => router.push({
                     pathname: '/room',
@@ -300,7 +313,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   headerAvatarText: { color: '#4440EB', fontWeight: '700', fontSize: 14 },
-  brandName: { fontSize: 24, fontWeight: '800', color: '#4440EB', letterSpacing: -0.5 },
+  brandName: { fontSize: 34, fontWeight: '800', color: '#4440EB', letterSpacing: -0.5, fontFamily:'Poppins-Bold' },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -376,20 +389,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFF',
     padding: 12,
-    borderRadius: 20,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#F3F4F6',
   },
   contactAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
+    width: 54,
+    height: 54,
+    borderRadius: 20,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  contactAvatarText: { fontSize: 16, fontWeight: '700', color: '#4440EB' },
+  contactAvatarText: { fontSize: 20, fontWeight: '700', color: '#4440EB' },
   onlineStatus: {
     position: 'absolute',
     bottom: -2,
